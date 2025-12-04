@@ -2,24 +2,76 @@
 
 alter table public.leads enable row level security;
 
--- Example helper: assume JWT has tenant_id, user_id, role.
--- You can use: current_setting('request.jwt.claims', true)::jsonb
+-- Helper to access JWT claims:
+-- current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'
+-- current_setting('request.jwt.claims', true)::jsonb ->> 'role'
+-- current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'
 
--- TODO: write a policy so:
--- - counselors see leads where they are owner_id OR in one of their teams
--- - admins can see all leads of their tenant
+------------------------------------------
+-- SELECT POLICY
+------------------------------------------
+-- Rules:
+-- - Admins can see all leads of their tenant
+-- - Counselors can see:
+--     leads they own (owner_id = user_id)
+--     OR leads where the team_id is in their team list
+--
+-- Tables assumed to exist:
+-- user_teams(user_id, team_id)
+-- teams(id, tenant_id)
 
-
--- Example skeleton for SELECT (replace with your own logic):
-
-create policy "leads_select_policy"
+create policy leads_select_policy
 on public.leads
 for select
 using (
-  true
-  -- TODO: add real RLS logic here, refer to README instructions
+  (
+    -- tenant must match
+    tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id')::uuid
+  )
+  AND
+  (
+    -- admin can see all leads
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'admin'
+
+    OR
+
+    -- counselor sees leads they own
+    owner_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'user_id')::uuid
+
+    OR
+
+    -- counselor sees leads assigned to their team
+    (
+      team_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM public.user_teams ut
+        WHERE ut.team_id = leads.team_id
+        AND ut.user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'user_id')::uuid
+      )
+    )
+  )
 );
 
--- TODO: add INSERT policy that:
--- - allows counselors/admins to insert leads for their tenant
--- - ensures tenant_id is correctly set/validated
+------------------------------------------
+-- INSERT POLICY
+------------------------------------------
+-- Rules:
+-- - Admins + counselors can insert
+-- - Inserted row tenant_id must match JWT tenant
+------------------------------------------
+
+create policy leads_insert_policy
+on public.leads
+for insert
+with check (
+  -- tenant must match for inserted rows
+  tenant_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id')::uuid
+
+  AND
+  (
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'admin'
+    OR
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'counselor'
+  )
+);
