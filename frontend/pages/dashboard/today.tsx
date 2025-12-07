@@ -19,18 +19,21 @@ export default function TodayDashboard() {
     setError(null);
 
     try {
-      // TODO:
-      // - Query tasks that are due today and not completed
-      // - Use supabase.from("tasks").select(...)
-      // - You can do date filtering in SQL or client-side
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
 
-      // Example:
-      // const { data, error } = await supabase
-      //   .from("tasks")
-      //   .select("*")
-      //   .eq("status", "open");
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .neq("status", "completed") // Fetch not completed
+        .gte("due_at", todayStart.toISOString())
+        .lte("due_at", todayEnd.toISOString());
 
-      setTasks([]);
+      if (error) throw error;
+      setTasks(data || []);
     } catch (err: any) {
       console.error(err);
       setError("Failed to load tasks");
@@ -41,9 +44,15 @@ export default function TodayDashboard() {
 
   async function markComplete(id: string) {
     try {
-      // TODO:
-      // - Update task.status to 'completed'
-      // - Re-fetch tasks or update state optimistically
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status: 'completed' })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      // Refresh list
+      fetchTasks();
     } catch (err: any) {
       console.error(err);
       alert("Failed to update task");
@@ -63,11 +72,11 @@ export default function TodayDashboard() {
       {tasks.length === 0 && <p>No tasks due today 🎉</p>}
 
       {tasks.length > 0 && (
-        <table>
+        <table border={1} cellPadding={10} style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
-            <tr>
+            <tr style={{ textAlign: 'left' }}>
               <th>Type</th>
-              <th>Application</th>
+              <th>Application ID</th>
               <th>Due At</th>
               <th>Status</th>
               <th>Action</th>
@@ -78,14 +87,15 @@ export default function TodayDashboard() {
               <tr key={t.id}>
                 <td>{t.type}</td>
                 <td>{t.application_id}</td>
-                <td>{new Date(t.due_at).toLocaleString()}</td>
+                <td>{new Date(t.due_at).toLocaleTimeString()}</td>
                 <td>{t.status}</td>
                 <td>
-                  {t.status !== "completed" && (
-                    <button onClick={() => markComplete(t.id)}>
-                      Mark Complete
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => markComplete(t.id)}
+                    style={{ padding: '5px 10px', cursor: 'pointer' }}
+                  >
+                    Mark Complete
+                  </button>
                 </td>
               </tr>
             ))}
