@@ -1,97 +1,79 @@
-import { useEffect, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../../lib/supabaseClient";
 
-type Task = {
-  id: string;
-  type: string;
-  status: string;
-  application_id: string;
-  due_at: string;
-};
+export default function TodayTasksPage() {
+  const queryClient = useQueryClient();
 
-export default function TodayDashboard() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ---- Fetch tasks due today ----
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["tasks-today"],
+    queryFn: async () => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
 
-  async function fetchTasks() {
-    setLoading(true);
-    setError(null);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
 
-    try {
-      // TODO:
-      // - Query tasks that are due today and not completed
-      // - Use supabase.from("tasks").select(...)
-      // - You can do date filtering in SQL or client-side
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .gte("due_at", start.toISOString())
+        .lte("due_at", end.toISOString())
+        .neq("status", "completed");
 
-      // Example:
-      // const { data, error } = await supabase
-      //   .from("tasks")
-      //   .select("*")
-      //   .eq("status", "open");
+      if (error) throw error;
+      return data;
+    },
+  });
 
-      setTasks([]);
-    } catch (err: any) {
-      console.error(err);
-      setError("Failed to load tasks");
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ---- Mutation: Mark task complete ----
+  const mutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status: "completed" })
+        .eq("id", taskId);
 
-  async function markComplete(id: string) {
-    try {
-      // TODO:
-      // - Update task.status to 'completed'
-      // - Re-fetch tasks or update state optimistically
-    } catch (err: any) {
-      console.error(err);
-      alert("Failed to update task");
-    }
-  }
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries(["tasks-today"]),
+  });
 
-  useEffect(() => {
-    fetchTasks();
-  }, []);
-
-  if (loading) return <div>Loading tasks...</div>;
-  if (error) return <div style={{ color: "red" }}>{error}</div>;
+  if (isLoading) return <p>Loading tasks...</p>;
+  if (isError) return <p>Failed to load tasks.</p>;
 
   return (
-    <main style={{ padding: "1.5rem" }}>
-      <h1>Today&apos;s Tasks</h1>
-      {tasks.length === 0 && <p>No tasks due today 🎉</p>}
+    <div style={{ padding: 24 }}>
+      <h1>Tasks Due Today</h1>
 
-      {tasks.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Application</th>
-              <th>Due At</th>
-              <th>Status</th>
-              <th>Action</th>
+      {data?.length === 0 && <p>No tasks due today.</p>}
+
+      <table border={1} cellPadding={10} style={{ marginTop: 20 }}>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Application ID</th>
+            <th>Due At</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {data?.map((task: any) => (
+            <tr key={task.id}>
+              <td>{task.type}</td>
+              <td>{task.application_id}</td>
+              <td>{new Date(task.due_at).toLocaleString()}</td>
+              <td>{task.status}</td>
+              <td>
+                <button onClick={() => mutation.mutate(task.id)}>
+                  Mark Complete
+                </button>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {tasks.map((t) => (
-              <tr key={t.id}>
-                <td>{t.type}</td>
-                <td>{t.application_id}</td>
-                <td>{new Date(t.due_at).toLocaleString()}</td>
-                <td>{t.status}</td>
-                <td>
-                  {t.status !== "completed" && (
-                    <button onClick={() => markComplete(t.id)}>
-                      Mark Complete
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </main>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
