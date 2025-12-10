@@ -1,57 +1,59 @@
--- LearnLynk Tech Test - Task 1: Schema
--- Fill in the definitions for leads, applications, tasks as per README.
-
 create extension if not exists "pgcrypto";
 
--- Leads table
+-- Leads
 create table if not exists public.leads (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null,
   owner_id uuid not null,
+  full_name text,
   email text,
   phone text,
-  full_name text,
-  stage text not null default 'new',
-  source text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  stage text default 'new',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
--- TODO: add useful indexes for leads:
--- - by tenant_id, owner_id, stage, created_at
+-- Indexes for leads
+create index if not exists idx_leads_tenant on leads(tenant_id);
+create index if not exists idx_leads_owner on leads(owner_id);
+create index if not exists idx_leads_stage on leads(stage);
 
-
--- Applications table
+-- Applications
 create table if not exists public.applications (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null,
   lead_id uuid not null references public.leads(id) on delete cascade,
   program_id uuid,
   intake_id uuid,
-  stage text not null default 'inquiry',
-  status text not null default 'open',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  stage text default 'inquiry',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
--- TODO: add useful indexes for applications:
--- - by tenant_id, lead_id, stage
+-- Indexes for applications
+create index if not exists idx_apps_tenant on applications(tenant_id);
+create index if not exists idx_apps_lead on applications(lead_id);
 
-
--- Tasks table
+-- Tasks
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null,
   application_id uuid not null references public.applications(id) on delete cascade,
-  title text,
   type text not null,
   status text not null default 'open',
   due_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+
+  -- Constraints
+  constraint task_type_check
+    check (type in ('call', 'email', 'review')),
+
+  constraint task_due_at_check
+    check (due_at >= created_at)
 );
 
--- TODO:
--- - add check constraint for type in ('call','email','review')
--- - add constraint that due_at >= created_at
--- - add indexes for tasks due today by tenant_id, due_at, status
+-- Indexes for tasks
+create index if not exists idx_tasks_tenant on tasks(tenant_id);
+create index if not exists idx_tasks_due on tasks(due_at);
+create index if not exists idx_tasks_status on tasks(status);
